@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recrutamento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #0b0f17; --card:#101826; --muted:#96a0b5; --ok:#2ecc71; --bad:#e74c3c; --accent:#5b95ff; }
+    * { box-sizing: border-box; }
+    html,body { height:100%; margin:0; font-family: Inter, system-ui, sans-serif; }
+    body { background: radial-gradient(1200px 800px at 70% -10%, #14203b 0%, #0b0f17 55%), var(--bg); color: #e7edf6; display:flex; justify-content:center; align-items:center; padding:20px; }
+    .wrap { width: 100%; max-width: 500px;}
+    .card { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(6px); border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    h1 { margin: 0 0 8px; text-align: center; font-size: clamp(28px, 5vw, 32px); }
+    p.sub { margin:0 0 18px; color: var(--muted); font-size: 16px; text-align: center;}
+    input[type="password"], input[type="text"] { width: 100%; padding: 12px 14px; border-radius: 12px; margin: 5px; border: 1px solid rgba(255,255,255,0.15); background: #0f1624; color:#e7edf6; outline: none; font-size: 18px; }
+    .btn { width:100%; margin-top:14px; padding:12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: linear-gradient(180deg, #2c3e58, #1d2a41); color:#fff; font-weight:700; cursor:pointer; letter-spacing:.3px; font-size: 18px;}
+    .btn:hover { filter: brightness(1.06); }
+    .status { margin-top: 14px; font-size: 14px; padding: 10px 12px; border-radius: 10px; display:none; }
+    .status.ok { display:block; background: rgba(46,204,113,.1); border:1px solid rgba(46,204,113,.35); color: var(--ok); }
+    .status.bad { display:block; background: rgba(231,76,60,.1); border:1px solid rgba(231,76,60,.35); color: var(--bad); }
+    @media (max-width: 500px) {
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="content">
+    <div class="card">
+      <h1> La (7) Cripta </h1>
+      <p class="sub">Toma o <strong>par inaugural</strong> de cada segredo; alinhados, eles formam a <strong>última voz.</strong></p>
+      <input id="secret" name="secret" type="password" placeholder="Digite a senha" autocomplete="off" />
+      <button id="submitBtn" class="btn" type="button">Entrar</button>
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+
+
+  <script>
+    function normalizeInput(str) {
+      return str
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/gi, "")
+        .toLowerCase();
+    }
+
+    async function sha256Hex(text) {
+      const enc = new TextEncoder();
+      const data = enc.encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    const throttle = {
+      attempts: 0,
+      lockedUntil: 0,
+      bumpFail() {
+        this.attempts++;
+        if (this.attempts % 5 === 0) {
+          this.lockedUntil = Date.now() + 5000;
+        }
+      },
+      canTry() {
+        return Date.now() >= this.lockedUntil;
+      }
+    };
+
+    async function loadConfig() {
+      const raw = await fetch('/secret.json');
+      return await raw.json();
+    }
+
+    async function submitAnswer() {
+      const status = document.getElementById('status');
+
+      if (!throttle.canTry()) {
+        status.className = 'status bad';
+        status.textContent = 'Muitas tentativas. Aguarde alguns segundos e tente de novo.';
+        return;
+      }
+
+      const input = document.getElementById('secret');
+      const answer = normalizeInput(input.value);
+
+      const { login } = await loadConfig();
+      const expectedHash = login.hash;
+
+      const hashHex = await sha256Hex(answer);
+
+      if (hashHex === expectedHash) {
+        localStorage.setItem('ctf-auth', 'ok');
+        document.body.style.background = '#000';
+        document.getElementById('content').innerHTML = `<div style="text-align:center; color:#2ecc71; font-size:clamp(24px,5vw,40px); font-weight:800;">Parabéns, você foi recrutado para LASETE! </div>`;
+      } else {
+        throttle.bumpFail();
+        status.className = 'status bad';
+        status.textContent = login.messageOnFail || 'Errado';
+      }
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', submitAnswer);
+    document.getElementById('secret').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitAnswer();
+    });
+  </script>
+</body>
+</html>
